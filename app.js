@@ -636,3 +636,126 @@ window.addEventListener('DOMContentLoaded', () => {
         document.getElementById('profile-dropdown').classList.add('hidden');
     });
 });
+
+// --- FIREBASE CONFIGURATION CONFIG ---
+const FIREBASE_URL = "https://smart-bottle-8b605-default-rtdb.firebaseio.com/readings.json";
+
+// --- MEMORY TRACKING CACHE FOR SIP DETECTION ---
+let baselineWeight = null;
+let currentTotalConsumed = 0;
+let pollingIntervalTimer = null;
+let isHardwareConnected = false;
+
+/**
+ * Replaces the old Web Serial API link. 
+ * Connects to the cloud database and starts a polling sync framework.
+ */
+function initiateHardwareSerialConnection() {
+    const statusBadge = document.getElementById("hardware-status-badge");
+    const connectBtn = document.getElementById("connect-serial-btn");
+
+    if (isHardwareConnected) {
+        // Toggle Connection off if clicked again
+        clearInterval(pollingIntervalTimer);
+        isHardwareConnected = false;
+        statusBadge.textContent = "Bottle Offline";
+        statusBadge.className = "hw-badge hw-disconnected";
+        connectBtn.innerHTML = '<i class="fas fa-wifi"></i> Connect Smart Bottle via Cloud Sync';
+        return;
+    }
+
+    // Update UI status to actively tracking
+    isHardwareConnected = true;
+    statusBadge.textContent = "Live Cloud Syncing";
+    statusBadge.className = "hw-badge hw-connected"; // Make sure your CSS accents this green/teal
+    connectBtn.innerHTML = '<i class="fas fa-pause"></i> Disconnect Cloud Link';
+
+    // Fetch instantly on click, then poll the REST endpoint cleanly every 3 seconds
+    fetchBottleTelemetry();
+    pollingIntervalTimer = setInterval(fetchBottleTelemetry, 3000);
+}
+
+/**
+ * Pulls the clean overwriting JSON root node from the Firebase REST endpoint
+ */
+async function fetchBottleTelemetry() {
+    try {
+        const response = await fetch(FIREBASE_URL);
+        if (!response.ok) throw new Error("Database server rejected requests");
+        
+        const data = await response.json();
+        if (!data) return; // Database is empty or booting
+
+        processCloudData(data);
+    } catch (error) {
+        console.error("HydraSync Cloud Fetch Error:", error);
+    }
+}
+
+/**
+ * Evaluates changes in state to catch sips, log consumed water volume, and flash time changes
+ */
+function processCloudData(data) {
+    const { currentWeight, hour, minute } = data;
+    const timestampDisplay = document.getElementById("last-consumption-timestamp");
+
+    // Initialize our calculation base if this is the first pull
+    if (baselineWeight === null) {
+        baselineWeight = currentWeight;
+        return;
+    }
+
+    // Determine if water was consumed (Weight drop exceeds a noise floor filter of 5 grams)
+    const weightDifference = baselineWeight - currentWeight;
+
+    if (weightDifference > 5) {
+        // Log individual sip metrics
+        currentTotalConsumed += Math.round(weightDifference);
+        
+        // Format explicit timestamp layout
+        const formattedHour = String(hour).padStart(2, '0');
+        const formattedMinute = String(minute).padStart(2, '0');
+        const finalTimeStr = `${formattedHour}:${formattedMinute}`;
+
+        // --- UPDATE HTML NODES DYNAMICALLY ---
+        timestampDisplay.textContent = `Sip of ${Math.round(weightDifference)} mL detected at ${finalTimeStr}`;
+        timestampDisplay.classList.add("pulse-highlight"); // Optional visual pop look
+        
+        // Remove highlighting style class after text effect ends
+        setTimeout(() => timestampDisplay.classList.remove("pulse-highlight"), 1000);
+
+        // Cascade updates downstream to progress rings & charts
+        updateHydrationDashboardProgress();
+    } else if (weightDifference < -15) {
+        // Bottle refilled: Reset calculations base to structural level cleanly without throwing an alert
+        console.log(`Smart Bottle Refill Detected. New base set to: ${currentWeight}g`);
+    }
+
+    // Anchor baseline tracking to state
+    baselineWeight = currentWeight;
+}
+
+/**
+ * Handles cascading updates inside the remaining dashboard UI frameworks
+ */
+function updateHydrationDashboardProgress() {
+    // Total Volume Counters text
+    const consumedTextNode = document.getElementById("gauge-consumed-text");
+    if (consumedTextNode) consumedTextNode.textContent = currentTotalConsumed;
+
+    // Fetch defined user targets
+    const targetTextNode = document.getElementById("gauge-target-text");
+    const targetValue = targetTextNode ? parseInt(targetTextNode.textContent, 10) : 2000;
+
+    // Calculate percent scalar bounds
+    const progressPercent = Math.min(Math.round((currentTotalConsumed / targetValue) * 100), 100);
+    
+    const percentageValueNode = document.getElementById("gauge-percentage-value");
+    if (percentageValueNode) percentageValueNode.textContent = `${progressPercent}%`;
+
+    // Conic gradient frame updates
+    const radialElement = document.getElementById("radial-progress-element");
+    if (radialElement) {
+        radialElement.style.background = `conic-gradient(var(--primary-blue, #0072ff) ${progressPercent * 3.6}deg, #334155 0deg)`;
+    }
+}
