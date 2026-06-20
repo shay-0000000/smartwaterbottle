@@ -638,11 +638,13 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 
+// =========================================================================
 // --- FIREBASE CONFIGURATION CONFIG ---
+// =========================================================================
 const FIREBASE_URL = "https://smartbottletemp-default-rtdb.firebaseio.com/readings.json";
+
 // --- MEMORY TRACKING CACHE FOR SIP DETECTION ---
 let baselineWeight = null;
-let currentTotalConsumed = 0;
 let pollingIntervalTimer = null;
 let isHardwareConnected = false;
 
@@ -655,22 +657,28 @@ function initiateHardwareSerialConnection() {
     const connectBtn = document.getElementById("connect-serial-btn");
 
     if (isHardwareConnected) {
-        // Toggle Connection off if clicked again
         clearInterval(pollingIntervalTimer);
         isHardwareConnected = false;
-        statusBadge.textContent = "Bottle Offline";
-        statusBadge.className = "hw-badge hw-disconnected";
-        connectBtn.innerHTML = '<i class="fas fa-wifi"></i> Connect Smart Bottle via Cloud Sync';
+        if (statusBadge) {
+            statusBadge.textContent = "Bottle Offline";
+            statusBadge.className = "hw-badge hw-disconnected";
+        }
+        if (connectBtn) {
+            connectBtn.innerHTML = '<i class="fas fa-wifi"></i> Connect Smart Bottle via Cloud Sync';
+        }
         return;
     }
 
-    // Update UI status to actively tracking
     isHardwareConnected = true;
-    statusBadge.textContent = "Live Cloud Syncing";
-    statusBadge.className = "hw-badge hw-connected"; // Make sure your CSS accents this green/teal
-    connectBtn.innerHTML = '<i class="fas fa-pause"></i> Disconnect Cloud Link';
+    if (statusBadge) {
+        statusBadge.textContent = "Live Cloud Syncing";
+        statusBadge.className = "hw-badge hw-connected"; 
+    }
+    if (connectBtn) {
+        connectBtn.innerHTML = '<i class="fas fa-pause"></i> Disconnect Cloud Link';
+    }
 
-    // Fetch instantly on click, then poll the REST endpoint cleanly every 3 seconds
+    // Initial fetch, then clean poll every 3 seconds
     fetchBottleTelemetry();
     pollingIntervalTimer = setInterval(fetchBottleTelemetry, 3000);
 }
@@ -684,7 +692,7 @@ async function fetchBottleTelemetry() {
         if (!response.ok) throw new Error("Database server rejected requests");
         
         const data = await response.json();
-        if (!data) return; // Database is empty or booting
+        if (!data) return; 
 
         processCloudData(data);
     } catch (error) {
@@ -699,63 +707,77 @@ function processCloudData(data) {
     const { currentWeight, hour, minute } = data;
     const timestampDisplay = document.getElementById("last-consumption-timestamp");
 
-    // Initialize our calculation base if this is the first pull
+    // Initialize base tracking if null or if a clear physical refill happened
     if (baselineWeight === null) {
         baselineWeight = currentWeight;
+        console.log(`Cloud Sync initialized baseline weight to: ${baselineWeight}g`);
         return;
     }
 
-    // Determine if water was consumed (Weight drop exceeds a noise floor filter of 5 grams)
+    // Determine weight change relative to last baseline
     const weightDifference = baselineWeight - currentWeight;
 
+    // 1. SIP DETECTED: Weight drop exceeds noise threshold (5 grams)
     if (weightDifference > 5) {
-        // Log individual sip metrics
-        currentTotalConsumed += Math.round(weightDifference);
+        let numericSipML = Math.round(weightDifference);
+        
+        console.log(`[SIP DETECTED] Consumed: ${numericSipML} mL`);
+        
+        // Push cleanly directly into the core app infrastructure
+        processIncomingHardwareTelemetry(numericSipML);
         
         // Format explicit timestamp layout
         const formattedHour = String(hour).padStart(2, '0');
         const formattedMinute = String(minute).padStart(2, '0');
         const finalTimeStr = `${formattedHour}:${formattedMinute}`;
 
-        // --- UPDATE HTML NODES DYNAMICALLY ---
-        timestampDisplay.textContent = `Sip of ${Math.round(weightDifference)} mL detected at ${finalTimeStr}`;
-        timestampDisplay.classList.add("pulse-highlight"); // Optional visual pop look
-        
-        // Remove highlighting style class after text effect ends
-        setTimeout(() => timestampDisplay.classList.remove("pulse-highlight"), 1000);
+        // Update the dashboard readout text directly
+        if (timestampDisplay) {
+            timestampDisplay.textContent = `Sip of ${numericSipML} mL detected at ${finalTimeStr}`;
+            timestampDisplay.classList.add("pulse-highlight");
+            setTimeout(() => timestampDisplay.classList.remove("pulse-highlight"), 1000);
+        }
 
-        // Cascade updates downstream to progress rings & charts
-        updateHydrationDashboardProgress();
-    } else if (weightDifference < -15) {
-        // Bottle refilled: Reset calculations base to structural level cleanly without throwing an alert
-        console.log(`Smart Bottle Refill Detected. New base set to: ${currentWeight}g`);
+        // Anchor baseline to this new weight level now that a drink finished
+        baselineWeight = currentWeight;
+
+    } 
+    // 2. REFILL DETECTED: Significant weight added (negative difference)
+    else if (weightDifference < -15) {
+        console.log(`Smart Bottle Refill or reset detected. Previous base: ${baselineWeight}g -> New base: ${currentWeight}g`);
+        baselineWeight = currentWeight;
     }
-
-    // Anchor baseline tracking to state
-    baselineWeight = currentWeight;
+    // 3. MINOR NOISE FLOOR FILTER
+    else if (weightDifference < 0 && weightDifference >= -15) {
+        // Slight structural/sensor balance variations: softly update baseline to prevent creeping errors
+        baselineWeight = currentWeight;
+    }
 }
 
 /**
- * Handles cascading updates inside the remaining dashboard UI frameworks
+ * Handles cascading updates inside the remaining dashboard UI frameworks safely
  */
 function updateHydrationDashboardProgress() {
-    // Total Volume Counters text
+    // Rely exclusively on the master variable to prevent double calculation bugs
+    const currentConsumed = totalDispensedVolumeML;
+
+    // Update Text Nodes
     const consumedTextNode = document.getElementById("gauge-consumed-text");
-    if (consumedTextNode) consumedTextNode.textContent = currentTotalConsumed;
+    if (consumedTextNode) consumedTextNode.textContent = Math.round(currentConsumed);
 
-    // Fetch defined user targets
+    const targetValue = userData.calculatedBaseTarget || 2000;
     const targetTextNode = document.getElementById("gauge-target-text");
-    const targetValue = targetTextNode ? parseInt(targetTextNode.textContent, 10) : 2000;
+    if (targetTextNode) targetTextNode.textContent = targetValue;
 
-    // Calculate percent scalar bounds
-    const progressPercent = Math.min(Math.round((currentTotalConsumed / targetValue) * 100), 100);
+    // Safely constrain progress percentage bounds between 0 and 100
+    const progressPercent = Math.max(0, Math.min(Math.round((currentConsumed / targetValue) * 100), 100));
     
     const percentageValueNode = document.getElementById("gauge-percentage-value");
     if (percentageValueNode) percentageValueNode.textContent = `${progressPercent}%`;
 
-    // Conic gradient frame updates
+    // Conic gradient layout frame rendering updates
     const radialElement = document.getElementById("radial-progress-element");
     if (radialElement) {
-        radialElement.style.background = `conic-gradient(var(--primary-blue, #0072ff) ${progressPercent * 3.6}deg, #334155 0deg)`;
+        radialElement.style.background = `conic-gradient(var(--accent-blue, #0284c7) ${progressPercent * 3.6}deg, var(--border-color, #e2e8f0) 0deg)`;
     }
 }
