@@ -579,7 +579,7 @@ function toggleFullscreenMode() {
     }
 }
 
-async function initiateHardwareSerialConnection() {
+async function initiateHardwareSerialConnection1() {
     const badge = document.getElementById('hardware-status-badge');
     if (!("serial" in navigator)) {
         alert("Web Serial features are not supported in this browser environment.");
