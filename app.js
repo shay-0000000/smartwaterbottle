@@ -639,8 +639,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
 
 // --- FIREBASE CONFIGURATION CONFIG ---
-const FIREBASE_URL = "https://smart-bottle-8b605-default-rtdb.firebaseio.com/readings.json";
-
+const FIREBASE_URL = "https://smartbottletemp-default-rtdb.firebaseio.com/readings.json";
 // --- MEMORY TRACKING CACHE FOR SIP DETECTION ---
 let baselineWeight = null;
 let currentTotalConsumed = 0;
