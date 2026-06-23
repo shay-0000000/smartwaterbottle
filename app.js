@@ -628,6 +628,17 @@ window.addEventListener('DOMContentLoaded', () => {
     // Fire weather logic instantly for DSCE context
     fetchLiveLocationAndWeather();
 
+  window.addEventListener('DOMContentLoaded', () => {
+    // Fire weather logic instantly for DSCE context
+    fetchLiveLocationAndWeather();
+
+    // Automatically trigger cloud syncing with Firebase on layout boot
+    initiateHardwareSerialConnection();
+
+    // --- NEW: INACTIVITY REMINDER TRIGGER ---
+    // Checks every 5 minutes (300,000 ms) if the user has been inactive for 4+ hours
+    setInterval(checkInactivityTimer, 5 * 60 * 1000);
+
     document.getElementById('profile-btn').addEventListener('click', (e) => {
         e.stopPropagation();
         document.getElementById('profile-dropdown').classList.toggle('hidden');
@@ -636,6 +647,7 @@ window.addEventListener('DOMContentLoaded', () => {
         document.getElementById('profile-dropdown').classList.add('hidden');
     });
 });
+
 
 
 // =========================================================================
@@ -781,3 +793,34 @@ function updateHydrationDashboardProgress() {
         radialElement.style.background = `conic-gradient(var(--accent-blue, #0284c7) ${progressPercent * 3.6}deg, var(--border-color, #e2e8f0) 0deg)`;
     }
 }
+
+/**
+ * Monitors user inactivity and displays an alert popup if no water 
+ * has been consumed for more than 4 hours.
+ */
+function checkInactivityTimer() {
+    // If they haven't logged any sips yet, use the current time as a baseline 
+    // or look at when they opened the app.
+    if (sipTimestampsArray.length === 0) return;
+
+    const now = new Date();
+    const lastSipTimestamp = sipTimestampsArray[sipTimestampsArray.length - 1];
+    
+    // Calculate difference in milliseconds
+    const timeDifferenceMS = now - lastSipTimestamp;
+    
+    // Convert to hours (1 hour = 3,600,000 milliseconds)
+    const hoursElapsed = timeDifferenceMS / (1000 * 60 * 60);
+
+    // If inactivity exceeds 4 hours, trigger a gentle popup reminder
+    if (hoursElapsed >= 4) {
+        // Round to 1 decimal place for clean reporting (e.g., 4.2 hours)
+        const roundedHours = hoursElapsed.toFixed(1);
+        
+        alert(`🚨 Hydration Reminder!\n\nIt has been ${roundedHours} hours since your last sip. Don't forget to drink water from your smart bottle to keep your health targets on track!`);
+        
+        // Push a dummy timestamp or softly update the array if you want to silence 
+        // subsequent alerts for the next 4 hours, or let it repeat until they drink.
+    }
+}
+
