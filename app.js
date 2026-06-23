@@ -136,12 +136,10 @@ async function fetchLiveLocationAndWeather() {
     const condEl = document.getElementById('current-condition');
     const locEl = document.getElementById('current-location');
 
-    // Locked Coordinates for Dayananda Sagar College of Engineering (DSCE)
     const lat = "12.91";
     const lon = "77.57";
     
     try {
-        // Fetch live weather data directly using DSCE coordinates
         const response = await fetch(`https://wttr.in/${lat},${lon}?format=j1`);
         if (!response.ok) throw new Error("API Failure");
         const data = await response.json();
@@ -149,16 +147,15 @@ async function fetchLiveLocationAndWeather() {
         const currentTemp = data.current_condition[0].temp_C;
         const weatherDesc = data.current_condition[0].weatherDesc[0].value;
 
-        // Update UI elements instantly with real data
-        tempEl.innerText = `${currentTemp}°C`;
-        condEl.innerText = weatherDesc;
-        locEl.innerHTML = `<i class="fas fa-location-dot"></i> DSCE Campus, Bengaluru`;
+        if (tempEl) tempEl.innerText = `${currentTemp}°C`;
+        if (condEl) condEl.innerText = weatherDesc;
+        if (locEl) locEl.innerHTML = `<i class="fas fa-location-dot"></i> DSCE Campus, Bengaluru`;
         
-        // Dynamic icon swap based on temperature threshold values
-        iconEl.className = parseInt(currentTemp) > 28 ? "fas fa-fire weather-icon" : "fas fa-cloud-sun weather-icon";
+        if (iconEl) {
+            iconEl.className = parseInt(currentTemp) > 28 ? "fas fa-fire weather-icon" : "fas fa-cloud-sun weather-icon";
+        }
         
-        // Auto-recalibrate target benchmarks dynamically if the campus is experiencing hot days
-        if(parseInt(currentTemp) > 30) {
+        if (parseInt(currentTemp) > 30) {
             userData.calculatedBaseTarget += 300; 
             updateVisualMetricsProgressGauges();
         }
@@ -168,10 +165,15 @@ async function fetchLiveLocationAndWeather() {
 }
 
 function fallbackStaticWeather(reason) {
-    document.getElementById('weather-status-icon').className = "fas fa-sun weather-icon";
-    document.getElementById('current-temp').innerText = "28°C";
-    document.getElementById('current-condition').innerText = `Sunny (${reason})`;
-    document.getElementById('current-location').innerHTML = `<i class="fas fa-location-dot"></i> DSCE Campus, Bengaluru`;
+    const iconEl = document.getElementById('weather-status-icon');
+    const tempEl = document.getElementById('current-temp');
+    const condEl = document.getElementById('current-condition');
+    const locEl = document.getElementById('current-location');
+
+    if (iconEl) iconEl.className = "fas fa-sun weather-icon";
+    if (tempEl) tempEl.innerText = "28°C";
+    if (condEl) condEl.innerText = `Sunny (${reason})`;
+    if (locEl) locEl.innerHTML = `<i class="fas fa-location-dot"></i> DSCE Campus, Bengaluru`;
 }
 
 function navigateToTab(targetViewId, clickedTabElement) {
@@ -290,7 +292,10 @@ function processIncomingHardwareTelemetry(volumeML) {
     hours = hours ? hours : 12; 
     const finalFormattedString = `${hours}:${minutes}:${seconds} ${ampm}`;
     
-    document.getElementById('last-consumption-timestamp').innerText = `${volumeML} mL logged at ${finalFormattedString}`;
+    const timestampDisplay = document.getElementById('last-consumption-timestamp');
+    if (timestampDisplay) {
+        timestampDisplay.innerText = `${volumeML} mL logged at ${finalFormattedString}`;
+    }
     
     calculateDrinkingFrequencyAndStatus();
     syncPointsAcrossPanels();
@@ -306,11 +311,14 @@ function calculateDrinkingFrequencyAndStatus() {
     const durationHours = Math.max((lastSip - firstSip) / (1000 * 60 * 60), 0.25); 
     const frequencyRate = (sipTimestampsArray.length / durationHours).toFixed(1);
     
-    document.getElementById('frequency-text').innerText = `${frequencyRate} sips / hour`;
+    const freqEl = document.getElementById('frequency-text');
+    if (freqEl) freqEl.innerText = `${frequencyRate} sips / hour`;
     
     const badge = document.getElementById('health-status-badge');
     const msg = document.getElementById('health-status-message');
     const progressRatio = totalDispensedVolumeML / userData.calculatedBaseTarget;
+    
+    if (!badge || !msg) return;
     
     if (progressRatio < 0.35) {
         badge.innerText = "Dehydrated State";
@@ -545,11 +553,20 @@ function resetPoints() {
     syncPointsAcrossPanels();
     updateVisualMetricsProgressGauges();
     
-    document.getElementById('last-consumption-timestamp').innerText = "Waiting for first sip... ";
-    document.getElementById('frequency-text').innerText = "0 times / hour";
-    document.getElementById('health-status-message').innerText = "Please take your first drink through your smart bottle to evaluate your hydration curve.";
-    document.getElementById('health-status-badge').className = "analysis-header-badge status-good";
-    document.getElementById('health-status-badge').innerText = "Analyzing Status...";
+    if (document.getElementById('last-consumption-timestamp')) {
+        document.getElementById('last-consumption-timestamp').innerText = "Waiting for first sip... ";
+    }
+    if (document.getElementById('frequency-text')) {
+        document.getElementById('frequency-text').innerText = "0 times / hour";
+    }
+    if (document.getElementById('health-status-message')) {
+        document.getElementById('health-status-message').innerText = "Please take your first drink through your smart bottle to evaluate your hydration curve.";
+    }
+    const hsBadge = document.getElementById('health-status-badge');
+    if (hsBadge) {
+        hsBadge.className = "analysis-header-badge status-good";
+        hsBadge.innerText = "Analyzing Status...";
+    }
     
     if (globalTelemetryChartInstance) renderLongitudinalIntakeGraph();
 }
@@ -567,7 +584,7 @@ function updateVisualMetricsProgressGauges() {
 
     const degDegrees = (percentage / 100) * 360;
     const frame = document.getElementById('radial-progress-element');
-    if (frame) frame.style.background = `conic-gradient(var(--accent-blue) ${degDegrees}deg, var(--border-color) ${degDegrees}deg)`;
+    if (frame) frame.style.background = `conic-gradient(var(--accent-blue, #0284c7) ${degDegrees}deg, var(--border-color, #e2e8f0) ${degDegrees}deg)`;
 }
 
 function toggleFullscreenMode() {
@@ -579,91 +596,15 @@ function toggleFullscreenMode() {
     }
 }
 
-async function initiateHardwareSerialConnection1() {
-    const badge = document.getElementById('hardware-status-badge');
-    if (!("serial" in navigator)) {
-        alert("Web Serial features are not supported in this browser environment.");
-        return;
-    }
-    try {
-        badge.innerText = "Connecting...";
-        serialPort = await navigator.serial.requestPort();
-        await serialPort.open({ baudRate: 115200 });
-        badge.innerText = "Bottle Connected";
-        badge.className = "hw-badge hw-connected";
-        document.getElementById('connect-serial-btn').style.display = "none";
-        
-        readHardwareStreamChannel();
-    } catch (e) {
-        badge.innerText = "Bottle Offline";
-        badge.className = "hw-badge hw-disconnected";
-    }
-}
-
-async function readHardwareStreamChannel() {
-    while (serialPort.readable) {
-        const textDecoder = new TextDecoderStream();
-        const readableStreamClosed = serialPort.readable.pipeTo(textDecoder.writable);
-        serialReader = textDecoder.readable.getReader();
-        try {
-            while (true) {
-                const { value, done } = await serialReader.read();
-                if (done) break;
-                if (value) {
-                    let numericVolumeValue = parseInt(value.replace(/[^0-9]/g, ""));
-                    if (!isNaN(numericVolumeValue) && numericVolumeValue > 0) {
-                        processIncomingHardwareTelemetry(numericVolumeValue);
-                    }
-                }
-            }
-        } catch (error) {
-            console.error(error);
-        } finally {
-            serialReader.releaseLock();
-        }
-    }
-}
-
-window.addEventListener('DOMContentLoaded', () => {
-    // Fire weather logic instantly for DSCE context
-    fetchLiveLocationAndWeather();
-
-  window.addEventListener('DOMContentLoaded', () => {
-    // Fire weather logic instantly for DSCE context
-    fetchLiveLocationAndWeather();
-
-    // Automatically trigger cloud syncing with Firebase on layout boot
-    initiateHardwareSerialConnection();
-
-    // --- NEW: INACTIVITY REMINDER TRIGGER ---
-    // Checks every 5 minutes (300,000 ms) if the user has been inactive for 4+ hours
-    setInterval(checkInactivityTimer, 5 * 60 * 1000);
-
-    document.getElementById('profile-btn').addEventListener('click', (e) => {
-        e.stopPropagation();
-        document.getElementById('profile-dropdown').classList.toggle('hidden');
-    });
-    window.addEventListener('click', () => {
-        document.getElementById('profile-dropdown').classList.add('hidden');
-    });
-});
-
-
-
 // =========================================================================
-// --- FIREBASE CONFIGURATION CONFIG ---
+// --- FIREBASE CONFIGURATION CONFIG & TELEMETRY LINK ---
 // =========================================================================
 const FIREBASE_URL = "https://smartbottletemp-default-rtdb.firebaseio.com/readings.json";
 
-// --- MEMORY TRACKING CACHE FOR SIP DETECTION ---
 let baselineWeight = null;
 let pollingIntervalTimer = null;
 let isHardwareConnected = false;
 
-/**
- * Replaces the old Web Serial API link. 
- * Connects to the cloud database and starts a polling sync framework.
- */
 function initiateHardwareSerialConnection() {
     const statusBadge = document.getElementById("hardware-status-badge");
     const connectBtn = document.getElementById("connect-serial-btn");
@@ -690,14 +631,10 @@ function initiateHardwareSerialConnection() {
         connectBtn.innerHTML = '<i class="fas fa-pause"></i> Disconnect Cloud Link';
     }
 
-    // Initial fetch, then clean poll every 3 seconds
     fetchBottleTelemetry();
     pollingIntervalTimer = setInterval(fetchBottleTelemetry, 3000);
 }
 
-/**
- * Pulls the clean overwriting JSON root node from the Firebase REST endpoint
- */
 async function fetchBottleTelemetry() {
     try {
         const response = await fetch(FIREBASE_URL);
@@ -712,115 +649,74 @@ async function fetchBottleTelemetry() {
     }
 }
 
-/**
- * Evaluates changes in state to catch sips, log consumed water volume, and flash time changes
- */
 function processCloudData(data) {
     const { currentWeight, hour, minute } = data;
     const timestampDisplay = document.getElementById("last-consumption-timestamp");
 
-    // Initialize base tracking if null or if a clear physical refill happened
     if (baselineWeight === null) {
         baselineWeight = currentWeight;
         console.log(`Cloud Sync initialized baseline weight to: ${baselineWeight}g`);
         return;
     }
 
-    // Determine weight change relative to last baseline
     const weightDifference = baselineWeight - currentWeight;
 
-    // 1. SIP DETECTED: Weight drop exceeds noise threshold (5 grams)
     if (weightDifference > 5) {
         let numericSipML = Math.round(weightDifference);
-        
         console.log(`[SIP DETECTED] Consumed: ${numericSipML} mL`);
         
-        // Push cleanly directly into the core app infrastructure
         processIncomingHardwareTelemetry(numericSipML);
         
-        // Format explicit timestamp layout
         const formattedHour = String(hour).padStart(2, '0');
         const formattedMinute = String(minute).padStart(2, '0');
         const finalTimeStr = `${formattedHour}:${formattedMinute}`;
 
-        // Update the dashboard readout text directly
         if (timestampDisplay) {
             timestampDisplay.textContent = `Sip of ${numericSipML} mL detected at ${finalTimeStr}`;
             timestampDisplay.classList.add("pulse-highlight");
             setTimeout(() => timestampDisplay.classList.remove("pulse-highlight"), 1000);
         }
 
-        // Anchor baseline to this new weight level now that a drink finished
         baselineWeight = currentWeight;
-
     } 
-    // 2. REFILL DETECTED: Significant weight added (negative difference)
     else if (weightDifference < -15) {
         console.log(`Smart Bottle Refill or reset detected. Previous base: ${baselineWeight}g -> New base: ${currentWeight}g`);
         baselineWeight = currentWeight;
     }
-    // 3. MINOR NOISE FLOOR FILTER
     else if (weightDifference < 0 && weightDifference >= -15) {
-        // Slight structural/sensor balance variations: softly update baseline to prevent creeping errors
         baselineWeight = currentWeight;
     }
 }
 
-/**
- * Handles cascading updates inside the remaining dashboard UI frameworks safely
- */
-function updateHydrationDashboardProgress() {
-    // Rely exclusively on the master variable to prevent double calculation bugs
-    const currentConsumed = totalDispensedVolumeML;
-
-    // Update Text Nodes
-    const consumedTextNode = document.getElementById("gauge-consumed-text");
-    if (consumedTextNode) consumedTextNode.textContent = Math.round(currentConsumed);
-
-    const targetValue = userData.calculatedBaseTarget || 2000;
-    const targetTextNode = document.getElementById("gauge-target-text");
-    if (targetTextNode) targetTextNode.textContent = targetValue;
-
-    // Safely constrain progress percentage bounds between 0 and 100
-    const progressPercent = Math.max(0, Math.min(Math.round((currentConsumed / targetValue) * 100), 100));
-    
-    const percentageValueNode = document.getElementById("gauge-percentage-value");
-    if (percentageValueNode) percentageValueNode.textContent = `${progressPercent}%`;
-
-    // Conic gradient layout frame rendering updates
-    const radialElement = document.getElementById("radial-progress-element");
-    if (radialElement) {
-        radialElement.style.background = `conic-gradient(var(--accent-blue, #0284c7) ${progressPercent * 3.6}deg, var(--border-color, #e2e8f0) 0deg)`;
-    }
-}
-
-/**
- * Monitors user inactivity and displays an alert popup if no water 
- * has been consumed for more than 4 hours.
- */
 function checkInactivityTimer() {
-    // If they haven't logged any sips yet, use the current time as a baseline 
-    // or look at when they opened the app.
     if (sipTimestampsArray.length === 0) return;
 
     const now = new Date();
     const lastSipTimestamp = sipTimestampsArray[sipTimestampsArray.length - 1];
-    
-    // Calculate difference in milliseconds
-    const timeDifferenceMS = now - lastSipTimestamp;
-    
-    // Convert to hours (1 hour = 3,600,000 milliseconds)
-    const hoursElapsed = timeDifferenceMS / (1000 * 60 * 60);
+    const hoursElapsed = (now - lastSipTimestamp) / (1000 * 60 * 60);
 
-    // If inactivity exceeds 4 hours, trigger a gentle popup reminder
     if (hoursElapsed >= 4) {
-        // Round to 1 decimal place for clean reporting (e.g., 4.2 hours)
-        const roundedHours = hoursElapsed.toFixed(1);
-        
-        alert(`🚨 Hydration Reminder!\n\nIt has been ${roundedHours} hours since your last sip. Don't forget to drink water from your smart bottle to keep your health targets on track!`);
-        
-        // Push a dummy timestamp or softly update the array if you want to silence 
-        // subsequent alerts for the next 4 hours, or let it repeat until they drink.
+        alert(`🚨 Hydration Reminder!\n\nIt has been ${hoursElapsed.toFixed(1)} hours since your last sip. Don't forget to drink water from your smart bottle to keep your health targets on track!`);
     }
 }
 
+// --- DOM READY LIFECYCLE LISTENERS ---
+window.addEventListener('DOMContentLoaded', () => {
+    fetchLiveLocationAndWeather();
+    initiateHardwareSerialConnection();
+
+    setInterval(checkInactivityTimer, 5 * 60 * 1000);
+
+    const profileBtn = document.getElementById('profile-btn');
+    if (profileBtn) {
+        profileBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const dropdown = document.getElementById('profile-dropdown');
+            if (dropdown) dropdown.classList.toggle('hidden');
+        });
+    }
+    window.addEventListener('click', () => {
+        const dropdown = document.getElementById('profile-dropdown');
+        if (dropdown) dropdown.classList.add('hidden');
+    });
+});
