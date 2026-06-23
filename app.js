@@ -605,6 +605,10 @@ let baselineWeight = null;
 let pollingIntervalTimer = null;
 let isHardwareConnected = false;
 
+// --- DATABASE TIME TRACKING FOR INACTIVITY ---
+let lastSipDbHour = null;
+let lastSipDbMinute = null;
+
 function initiateHardwareSerialConnection() {
     const statusBadge = document.getElementById("hardware-status-badge");
     const connectBtn = document.getElementById("connect-serial-btn");
@@ -653,14 +657,18 @@ function processCloudData(data) {
     const { currentWeight, hour, minute } = data;
     const timestampDisplay = document.getElementById("last-consumption-timestamp");
 
+    // 1. INITIALIZE TRACKERS ON FIRST BOOT
     if (baselineWeight === null) {
         baselineWeight = currentWeight;
-        console.log(`Cloud Sync initialized baseline weight to: ${baselineWeight}g`);
+        lastSipDbHour = hour;
+        lastSipDbMinute = minute;
+        console.log(`Cloud Sync initialized baseline weight to: ${baselineWeight}g. Start DB Time: ${hour}:${minute}`);
         return;
     }
 
     const weightDifference = baselineWeight - currentWeight;
 
+    // 2. SIP DETECTED: Update water baseline and save DB timestamp
     if (weightDifference > 5) {
         let numericSipML = Math.round(weightDifference);
         console.log(`[SIP DETECTED] Consumed: ${numericSipML} mL`);
@@ -677,8 +685,12 @@ function processCloudData(data) {
             setTimeout(() => timestampDisplay.classList.remove("pulse-highlight"), 1000);
         }
 
+        // Capture the DB time of this specific sip event
+        lastSipDbHour = hour;
+        lastSipDbMinute = minute;
         baselineWeight = currentWeight;
     } 
+    // 3. REFILL OR RESET ACCIDENTAL FLUCTUATION
     else if (weightDifference < -15) {
         console.log(`Smart Bottle Refill or reset detected. Previous base: ${baselineWeight}g -> New base: ${currentWeight}g`);
         baselineWeight = currentWeight;
@@ -686,17 +698,39 @@ function processCloudData(data) {
     else if (weightDifference < 0 && weightDifference >= -15) {
         baselineWeight = currentWeight;
     }
+
+    // 4. INACTIVITY CHECK USING DB TIME VALUES
+    // This executes on every poll (every 3 seconds) using the time values in the database payload
+    checkDbInactivityTimer(hour, minute);
 }
 
-function checkInactivityTimer() {
-    if (sipTimestampsArray.length === 0) return;
+/**
+ * Calculates time gaps strictly via hours and minutes sent from the Firebase JSON structure.
+ */
+function checkDbInactivityTimer(currentDbHour, currentDbMinute) {
+    if (lastSipDbHour === null) return;
 
-    const now = new Date();
-    const lastSipTimestamp = sipTimestampsArray[sipTimestampsArray.length - 1];
-    const hoursElapsed = (now - lastSipTimestamp) / (1000 * 60 * 60);
+    // Convert both timestamps completely into total minutes from the start of the day
+    const currentTotalDbMinutes = (currentDbHour * 60) + currentDbMinute;
+    const lastSipTotalDbMinutes = (lastSipDbHour * 60) + lastSipDbMinute;
 
+    // Calculate total minutes passed since the last recorded sip in the database
+    let minutesElapsed = currentTotalDbMinutes - lastSipTotalDbMinutes;
+
+    // Handle standard daily rollover edge-cases (e.g., last sip at 11 PM, current time is 2 AM)
+    if (minutesElapsed < 0) {
+        minutesElapsed += (24 * 60); 
+    }
+
+    const hoursElapsed = minutesElapsed / 60;
+
+    // Trigger the alert if database inactivity hits or crosses 4 hours
     if (hoursElapsed >= 4) {
-        alert(`🚨 Hydration Reminder!\n\nIt has been ${hoursElapsed.toFixed(1)} hours since your last sip. Don't forget to drink water from your smart bottle to keep your health targets on track!`);
+        alert(`🚨 Hydration Reminder!\n\nAccording to your smart bottle records, it has been ${hoursElapsed.toFixed(1)} hours since your last sip. Keep drinking water to stay on track!`);
+        
+        // Advance the tracker placeholder cleanly so the alert doesn't block the screen every 3 seconds
+        lastSipDbHour = currentDbHour;
+        lastSipDbMinute = currentDbMinute;
     }
 }
 
@@ -704,8 +738,6 @@ function checkInactivityTimer() {
 window.addEventListener('DOMContentLoaded', () => {
     fetchLiveLocationAndWeather();
     initiateHardwareSerialConnection();
-
-    setInterval(checkInactivityTimer, 5 * 60 * 1000);
 
     const profileBtn = document.getElementById('profile-btn');
     if (profileBtn) {
@@ -720,3 +752,4 @@ window.addEventListener('DOMContentLoaded', () => {
         if (dropdown) dropdown.classList.add('hidden');
     });
 });
+
